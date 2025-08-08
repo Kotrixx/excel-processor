@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { readFile, downloadExcel, validateVulnerabilityColumns, logger } from '../utils/fileUtils';
 
 export default function ConcatenatePage() {
   const [loading, setLoading] = useState(false);
@@ -23,6 +22,232 @@ export default function ConcatenatePage() {
   } | null>(null);
   
   const filesRef = useRef<HTMLInputElement>(null);
+
+  // Funciones utilitarias inline para evitar problemas de SSR
+  const logger = {
+    info: (message: string, data?: unknown) => {
+      console.log(`[INFO] ${message}`, data || '');
+    },
+    warn: (message: string, data?: unknown) => {
+      console.warn(`[WARN] ${message}`, data || '');
+    },
+    error: (message: string, error?: unknown) => {
+      console.error(`[ERROR] ${message}`, error || '');
+    },
+    debug: (message: string, data?: unknown) => {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[DEBUG] ${message}`, data || '');
+      }
+    }
+  };
+
+  const validateVulnerabilityColumns = (data: Record<string, unknown>[]): { 
+    isValid: boolean; 
+    foundColumns: string[]; 
+    missingColumns: string[] 
+  } => {
+    if (data.length === 0) {
+      return { isValid: false, foundColumns: [], missingColumns: [] };
+    }
+
+    const expectedColumns = ['Source', 'Asset', 'Severity', 'Description', 'Fingerprint'];
+    const availableColumns = Object.keys(data[0]);
+    
+    const foundColumns = expectedColumns.filter(col => 
+      availableColumns.some(available => 
+        available.toLowerCase().includes(col.toLowerCase())
+      )
+    );
+    
+    const missingColumns = expectedColumns.filter(col => !foundColumns.includes(col));
+    
+    return {
+      isValid: foundColumns.length >= 3,
+      foundColumns,
+      missingColumns
+    };
+  };
+
+  const readFile = async (file: File): Promise<Record<string, unknown>[]> => {
+    const fileExtension = file.name.toLowerCase().split('.').pop();
+    
+    if (fileExtension === 'csv') {
+      return await readCSVFile(file);
+    } else if (fileExtension === 'xlsx' || fileExtension === 'xls') {
+      const ExcelJS = await import('exceljs');
+      const excelData = await readExcelFile(file, ExcelJS.default);
+      const firstSheetName = Object.keys(excelData)[0];
+      return excelData[firstSheetName];
+    } else {
+      throw new Error(`Tipo de archivo no soportado: ${fileExtension}`);
+    }
+  };
+
+  const readCSVFile = (file: File): Promise<Record<string, unknown>[]> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const text = e.target?.result as string;
+          const lines = text.split('\n').filter(line => line.trim());
+          
+          if (lines.length < 2) {
+            throw new Error('El archivo CSV debe tener al menos una fila de encabezados y una fila de datos');
+          }
+
+          const parseCSVLine = (line: string): string[] => {
+            const result: string[] = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+              const char = line[i];
+              const nextChar = line[i + 1];
+              
+              if (char === '"') {
+                if (inQuotes && nextChar === '"') {
+                  current += '"';
+                  i++;
+                } else {
+                  inQuotes = !inQuotes;
+                }
+              } else if (char === ',' && !inQuotes) {
+                result.push(current.trim());
+                current = '';
+              } else {
+                current += char;
+              }
+            }
+            result.push(current.trim());
+            return result;
+          };
+
+          const headers = parseCSVLine(lines[0]);
+          const data: Record<string, unknown>[] = [];
+          
+          for (let i = 1; i < lines.length; i++) {
+            const values = parseCSVLine(lines[i]);
+            if (values.length >= headers.length) {
+              const row: Record<string, unknown> = {};
+              headers.forEach((header, index) => {
+                row[header] = values[index] || '';
+              });
+              data.push(row);
+            }
+          }
+          
+          resolve(data);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+  };
+
+  const readExcelFile = async (file: File, ExcelJS: any): Promise<{ [key: string]: Record<string, unknown>[] }> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const buffer = e.target?.result as ArrayBuffer;
+          const workbook = new ExcelJS.Workbook();
+          await workbook.xlsx.load(buffer);
+          
+          const result: { [key: string]: Record<string, unknown>[] } = {};
+          
+          workbook.worksheets.forEach((worksheet: any) => {
+            const sheetData: Record<string, unknown>[] = [];
+            const headers: string[] = [];
+            
+            const headerRow = worksheet.getRow(1);
+            headerRow.eachCell((cell: any, colNumber: number) => {
+              headers[colNumber - 1] = cell.text || `Column${colNumber}`;
+            });
+            
+            worksheet.eachRow((row: any, rowNumber: number) => {
+              if (rowNumber > 1) {
+                const rowData: Record<string, unknown> = {};
+                row.eachCell((cell: any, colNumber: number) => {
+                  const header = headers[colNumber - 1];
+                  if (header) {
+                    rowData[header] = cell.text || cell.value;
+                  }
+                });
+                if (Object.keys(rowData).length > 0) {
+                  sheetData.push(rowData);
+                }
+              }
+            });
+            
+            result[worksheet.name] = sheetData;
+          });
+          
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  const downloadExcel = async (
+    data: Record<string, unknown>[], 
+    filename: string, 
+    sheetName: string = 'Sheet1'
+  ): Promise<void> => {
+    try {
+      const ExcelJS = await import('exceljs');
+      const workbook = new ExcelJS.default.Workbook();
+      const worksheet = workbook.addWorksheet(sheetName);
+      
+      if (data.length > 0) {
+        const headers = Object.keys(data[0]);
+        worksheet.addRow(headers);
+        
+        data.forEach((row) => {
+          const values = headers.map(header => row[header]);
+          worksheet.addRow(values);
+        });
+        
+        const headerRow = worksheet.getRow(1);
+        headerRow.font = { bold: true };
+        headerRow.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFE0E0E0' }
+        };
+
+        worksheet.columns.forEach((column: any, index: number) => {
+          const header = headers[index];
+          let maxLength = header ? header.length : 10;
+          
+          const sampleSize = Math.min(100, data.length);
+          for (let i = 0; i < sampleSize; i++) {
+            const cellValue = String(data[i][header] || '');
+            maxLength = Math.max(maxLength, cellValue.length);
+          }
+          
+          column.width = Math.min(Math.max(maxLength + 2, 10), 50);
+        });
+      }
+      
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      });
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      throw error;
+    }
+  };
 
   const handleConcatenateFiles = async () => {
     if (!filesRef.current?.files?.length) {
