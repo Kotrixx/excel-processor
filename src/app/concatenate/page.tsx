@@ -11,7 +11,15 @@ export default function ConcatenatePage() {
     successfulFiles: number;
     failedFiles: string[];
     totalRows: number;
-    validationResults: any[];
+    validationResults: Array<{
+      fileName: string;
+      rowCount: number;
+      validation: {
+        isValid: boolean;
+        foundColumns: string[];
+        missingColumns: string[];
+      };
+    }>;
   } | null>(null);
   
   const filesRef = useRef<HTMLInputElement>(null);

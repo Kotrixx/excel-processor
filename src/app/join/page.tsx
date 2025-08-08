@@ -67,7 +67,7 @@ export default function JoinPage() {
       logger.info(`Usando columna para JOIN: ${joinColumn}`);
       
       // Crear índice del segundo archivo para búsqueda rápida
-      const data2Index = new Map<string, any>();
+      const data2Index = new Map<string, Record<string, unknown>>();
       data2.forEach((row, index) => {
         const key = String(row[joinColumn]);
         if (key && key !== 'undefined' && key !== 'null' && key.trim() !== '') {
@@ -365,7 +365,7 @@ export default function JoinPage() {
             </ol>
             <p className="mt-3"><strong>Columnas agregadas al resultado:</strong></p>
             <ul className="list-disc list-inside space-y-1 ml-4">
-              <li><code>_join_status</code>: 'matched' o 'no_match'</li>
+              <li><code>_join_status</code>: &apos;matched&apos; o &apos;no_match&apos;</li>
               <li><code>_join_key</code>: Valor usado para el JOIN</li>
               <li><code>_file1_row</code>: Número de fila en archivo principal</li>
               <li><code>_file2_row</code>: Número de fila en archivo de datos (si hay match)</li>
