@@ -15,6 +15,8 @@ export default function UniquePage() {
     columnUsed: string;
     severityBreakdown: { [key: string]: number };
     topSources: { [key: string]: number };
+    topDetectors: { [key: string]: number };
+    topAssets: { [key: string]: number };
   } | null>(null);
   
   const fileRef = useRef<HTMLInputElement>(null);
@@ -254,17 +256,28 @@ export default function UniquePage() {
     if (data.length === 0) return [];
     
     const sampleRow = data[0];
-    const priorityColumns = ['Fingerprint', 'fingerprint', 'CVE', 'cve', 'Detector', 'detector'];
+    // Priorizar Detector como primera opción para vulnerabilidades
+    const priorityColumns = [
+      'Detector', 'detector', 
+      'Fingerprint', 'fingerprint', 
+      'CVE', 'cve', 
+      'Asset Name', 'asset name', 'assetname',
+      'URI', 'uri'
+    ];
     
     const foundColumns = Object.keys(sampleRow).filter(key => 
+      key.toLowerCase().includes('detector') ||
+      key.toLowerCase().includes('fingerprint') ||
       key.toLowerCase().includes('cve') || 
       key.toLowerCase().includes('codigo') || 
       key.toLowerCase().includes('code') ||
       key.toLowerCase().includes('mgh') ||
-      key.toLowerCase().includes('fingerprint') ||
-      key.toLowerCase().includes('detector')
+      key.toLowerCase().includes('uri') ||
+      key.toLowerCase().includes('asset name') ||
+      key.toLowerCase().includes('assetname')
     );
     
+    // Priorizar Detector como primera opción
     const sorted = foundColumns.sort((a, b) => {
       const aIndex = priorityColumns.findIndex(p => a.toLowerCase().includes(p.toLowerCase()));
       const bIndex = priorityColumns.findIndex(p => b.toLowerCase().includes(p.toLowerCase()));
@@ -275,7 +288,7 @@ export default function UniquePage() {
       return 0;
     });
     
-    logger.debug('Columnas únicas encontradas:', sorted);
+    logger.debug('Columnas únicas encontradas (priorizando Detector):', sorted);
     return sorted;
   };
 
@@ -316,35 +329,68 @@ export default function UniquePage() {
       const uniqueVulnerabilities = new Map<string, VulnerabilityData>();
       const severityCount: { [key: string]: number } = {};
       const sourceCount: { [key: string]: number } = {};
+      const detectorCount: { [key: string]: number } = {};
+      const assetCount: { [key: string]: number } = {};
       
       fileData.forEach(row => {
         const code = row[codeColumn];
-        if (code && code.toString().trim() && !uniqueVulnerabilities.has(code)) {
+        if (code && code.toString().trim() && !uniqueVulnerabilities.has(code.toString())) {
           const processedRow = {
+            // Campos principales de identificación
             codigo_unico: code,
+            detector: row.Detector || row.detector || '',
+            fingerprint: row.Fingerprint || row.fingerprint || '',
+            
+            // Información del activo
+            source: row.Source || row.source || '',
+            asset: row.Asset || row.asset || '',
+            team: row.Team || row.team || '',
+            asset_name: row['Asset Name'] || row.asset_name || row.assetname || '',
+            asset_type: row['Asset Type'] || row.asset_type || row.assettype || '',
+            uri: row.URI || row.uri || '',
+            
+            // Información de la vulnerabilidad
             severidad: row.Severity || row.severity || row.Criticidad || 'No especificada',
             descripcion: row.Description || row.description || row.Descripcion || '',
-            detector: row.Detector || row.detector || '',
-            asset: row.Asset || row.asset || '',
-            source: row.Source || row.source || '',
-            team: row.Team || row.team || '',
-            uri: row.URI || row.uri || '',
             content_class: row['Content Class'] || row.content_class || '',
-            ...row,
+            
+            // Información de gestión
+            exposure_window: row['Exposure window'] || row.exposure_window || '',
+            ignored: row.Ignored || row.ignored || '',
+            line_start: row['Line start'] || row.line_start || '',
+            line_end: row['Line end'] || row.line_end || '',
+            
+            // Metadatos de procesamiento
             _extracted_at: new Date().toISOString(),
-            _original_file: file.name
+            _original_file: file.name,
+            _deduplication_column: codeColumn,
+            
+            // Mantener todos los campos originales también
+            ...row
           };
 
-          uniqueVulnerabilities.set(code, processedRow);
+          uniqueVulnerabilities.set(code.toString(), processedRow);
 
           // Estadísticas de severidad
-          const severity = processedRow.severidad;
+          const severity = processedRow.severidad.toString();
           severityCount[severity] = (severityCount[severity] || 0) + 1;
 
           // Estadísticas de source
-          const source = processedRow.source;
+          const source = processedRow.source.toString();
           if (source) {
             sourceCount[source] = (sourceCount[source] || 0) + 1;
+          }
+
+          // Estadísticas de detector
+          const detector = processedRow.detector.toString();
+          if (detector) {
+            detectorCount[detector] = (detectorCount[detector] || 0) + 1;
+          }
+
+          // Estadísticas de asset
+          const asset = processedRow.asset.toString();
+          if (asset) {
+            assetCount[asset] = (assetCount[asset] || 0) + 1;
           }
         }
       });
@@ -364,8 +410,18 @@ export default function UniquePage() {
       
       await downloadExcel(uniqueData, filename, 'Vulnerabilidades_Unicas');
       
-      // Top 5 sources
+      // Top 5 sources, detectors y assets
       const topSources = Object.entries(sourceCount)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 5)
+        .reduce((obj, [key, value]) => ({ ...obj, [key]: value }), {});
+
+      const topDetectors = Object.entries(detectorCount)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 5)
+        .reduce((obj, [key, value]) => ({ ...obj, [key]: value }), {});
+
+      const topAssets = Object.entries(assetCount)
         .sort(([,a], [,b]) => b - a)
         .slice(0, 5)
         .reduce((obj, [key, value]) => ({ ...obj, [key]: value }), {});
@@ -376,7 +432,9 @@ export default function UniquePage() {
         duplicatesRemoved: fileData.length - uniqueData.length,
         columnUsed: codeColumn,
         severityBreakdown: severityCount,
-        topSources
+        topSources,
+        topDetectors,
+        topAssets
       });
 
       setMessage(`✅ Se encontraron ${uniqueData.length} vulnerabilidades únicas usando la columna "${codeColumn}"`);
@@ -514,7 +572,7 @@ export default function UniquePage() {
               </div>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid md:grid-cols-3 gap-6">
               {/* Breakdown por severidad */}
               <div className="bg-white p-4 rounded-lg">
                 <h4 className="font-medium text-gray-900 mb-3">Distribución por Severidad</h4>
@@ -532,17 +590,49 @@ export default function UniquePage() {
                 </div>
               </div>
 
-              {/* Top sources */}
+              {/* Top detectores */}
               <div className="bg-white p-4 rounded-lg">
-                <h4 className="font-medium text-gray-900 mb-3">Top Sources</h4>
+                <h4 className="font-medium text-gray-900 mb-3">Top Detectores</h4>
                 <div className="space-y-2">
-                  {Object.entries(stats.topSources).map(([source, count]) => (
-                    <div key={source} className="flex justify-between items-center">
-                      <span className="text-sm text-gray-700 truncate flex-1 mr-2">{source || 'Sin especificar'}</span>
-                      <span className="font-medium text-gray-900">{count}</span>
+                  {Object.entries(stats.topDetectors).map(([detector, count]) => (
+                    <div key={detector} className="flex justify-between items-center">
+                      <span className="text-sm text-gray-700 truncate flex-1 mr-2" title={detector}>
+                        {detector || 'Sin especificar'}
+                      </span>
+                      <span className="font-medium text-blue-600">{count}</span>
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Top assets */}
+              <div className="bg-white p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-3">Top Assets</h4>
+                <div className="space-y-2">
+                  {Object.entries(stats.topAssets).map(([asset, count]) => (
+                    <div key={asset} className="flex justify-between items-center">
+                      <span className="text-sm text-gray-700 truncate flex-1 mr-2" title={asset}>
+                        {asset || 'Sin especificar'}
+                      </span>
+                      <span className="font-medium text-purple-600">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Top sources - ahora en fila separada */}
+            <div className="mt-4 bg-white p-4 rounded-lg">
+              <h4 className="font-medium text-gray-900 mb-3">Top Sources</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                {Object.entries(stats.topSources).map(([source, count]) => (
+                  <div key={source} className="flex justify-between items-center p-2 bg-gray-50 rounded">
+                    <span className="text-sm text-gray-700 truncate flex-1 mr-2" title={source}>
+                      {source || 'Sin especificar'}
+                    </span>
+                    <span className="font-medium text-green-600">{count}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -552,14 +642,34 @@ export default function UniquePage() {
         <div className="mt-8 bg-green-50 border border-green-200 rounded-lg p-6">
           <h3 className="text-lg font-semibold text-green-900 mb-3">💡 Información de Uso</h3>
           <div className="text-sm text-green-800 space-y-2">
-            <p><strong>Columnas priorizadas para deduplicación:</strong></p>
+            <p><strong>Columnas priorizadas para deduplicación (en orden):</strong></p>
             <ol className="list-decimal list-inside space-y-1 ml-4">
               <li><code>Fingerprint</code> - Identificador único más confiable</li>
+              <li><code>Detector</code> - Herramienta que detectó la vulnerabilidad (muy importante)</li>
               <li><code>CVE</code> - Identificador de vulnerabilidad estándar</li>
-              <li><code>Detector</code> - Herramienta que detectó la vulnerabilidad</li>
-              <li>Cualquier columna que contenga: code, codigo, mgh</li>
+              <li><code>Asset Name</code> - Nombre específico del activo</li>
+              <li><code>URI</code> - Ubicación específica de la vulnerabilidad</li>
             </ol>
-            <p className="mt-3"><strong>Columnas agregadas:</strong> <code>_extracted_at</code>, <code>_original_file</code></p>
+            <p className="mt-3"><strong>Campos procesados automáticamente:</strong></p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+              <div>
+                <p className="font-medium">Identificación:</p>
+                <ul className="text-xs space-y-1 ml-2">
+                  <li>• Detector, Fingerprint, CVE</li>
+                  <li>• Source, Asset, Team</li>
+                  <li>• Asset Name, Asset Type, URI</li>
+                </ul>
+              </div>
+              <div>
+                <p className="font-medium">Vulnerabilidad:</p>
+                <ul className="text-xs space-y-1 ml-2">
+                  <li>• Severity, Description</li>
+                  <li>• Content Class, Exposure window</li>
+                  <li>• Line start, Line end, Ignored</li>
+                </ul>
+              </div>
+            </div>
+            <p className="mt-3"><strong>Metadatos agregados:</strong> <code>_extracted_at</code>, <code>_original_file</code>, <code>_deduplication_column</code></p>
             <p><strong>Ordenamiento:</strong> Por severidad (Critical → High → Medium → Low)</p>
           </div>
         </div>
