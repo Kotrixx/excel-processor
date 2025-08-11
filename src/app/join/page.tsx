@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 
 interface JoinStats {
   file1Name: string;
@@ -46,7 +46,7 @@ export default function ExcelMergerPage() {
   };
 
   // Función mejorada para leer archivos
-  const readFile = async (file: File): Promise<Record<string, unknown>[]> => {
+  const readFile = useCallback(async (file: File): Promise<Record<string, unknown>[]> => {
     const fileExtension = file.name.toLowerCase().split('.').pop();
     
     if (fileExtension === 'csv') {
@@ -59,9 +59,9 @@ export default function ExcelMergerPage() {
     } else {
       throw new Error(`Tipo de archivo no soportado: ${fileExtension}`);
     }
-  };
+  }, []);
 
-  const readCSVFile = (file: File): Promise<Record<string, unknown>[]> => {
+  const readCSVFile = useCallback((file: File): Promise<Record<string, unknown>[]> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -121,9 +121,9 @@ export default function ExcelMergerPage() {
       };
       reader.readAsText(file, 'utf-8');
     });
-  };
+  }, []);
 
-  const readExcelFile = async (file: File, ExcelJS: typeof import('exceljs')): Promise<{ [key: string]: Record<string, unknown>[] }> => {
+  const readExcelFile = useCallback(async (file: File, ExcelJS: typeof import('exceljs')): Promise<{ [key: string]: Record<string, unknown>[] }> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = async (e) => {
@@ -169,9 +169,9 @@ export default function ExcelMergerPage() {
       };
       reader.readAsArrayBuffer(file);
     });
-  };
+  }, []);
 
-  const downloadExcel = async (
+  const downloadExcel = useCallback(async (
     data: Record<string, unknown>[], 
     filename: string, 
     sheetName: string = 'Datos_Combinados'
@@ -247,10 +247,10 @@ export default function ExcelMergerPage() {
     } catch (error) {
       throw error;
     }
-  };
+  }, []);
 
   // Función para encontrar la columna Detector (prioridad absoluta)
-  const findJoinColumn = (data1: Record<string, unknown>[], data2: Record<string, unknown>[]): string | null => {
+  const findJoinColumn = useCallback((data1: Record<string, unknown>[], data2: Record<string, unknown>[]): string | null => {
     if (data1.length === 0 || data2.length === 0) return null;
     
     const columns1 = Object.keys(data1[0]);
@@ -270,9 +270,9 @@ export default function ExcelMergerPage() {
     }
     
     return null;
-  };
+  }, []);
 
-  const handleCombineFiles = async () => {
+  const handleCombineFiles = useCallback(async () => {
     if (!baseFileRef.current?.files?.[0] || !referenceFileRef.current?.files?.[0]) {
       setMessage('❌ Por favor selecciona ambos archivos CSV o Excel');
       return;
@@ -446,14 +446,14 @@ Asegúrate de que ambos archivos tengan una columna llamada 'Detector'.`);
     } finally {
       setLoading(false);
     }
-  };
+  }, [readFile, findJoinColumn, downloadExcel]);
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     if (baseFileRef.current) baseFileRef.current.value = '';
     if (referenceFileRef.current) referenceFileRef.current.value = '';
     setMessage('');
     setStats(null);
-  };
+  }, []);
 
   return (
     <div className="max-w-6xl mx-auto p-6">
