@@ -1,52 +1,47 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef } from 'react';
 
-interface JoinStats {
-  file1Name: string;
-  file2Name: string;
-  file1Rows: number;
-  file2Rows: number;
-  joinColumn: string;
-  matchedRows: number;
-  unmatchedRows: number;
-  totalOutputRows: number;
-  commonColumns: string[];
-  file1OnlyColumns: string[];
-  file2OnlyColumns: string[];
-  duplicatesInFile2: number;
-  unmatchedInFile2: number;
-  processingTime: number;
-}
-
-export default function ExcelMergerPage() {
+export default function JoinPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [stats, setStats] = useState<JoinStats | null>(null);
+  const [stats, setStats] = useState<{
+    file1Name: string;
+    file2Name: string;
+    file1Rows: number;
+    file2Rows: number;
+    joinColumn: string;
+    matchedRows: number;
+    unmatchedRows: number;
+    totalOutputRows: number;
+    commonColumns: string[];
+    file1OnlyColumns: string[];
+    file2OnlyColumns: string[];
+  } | null>(null);
   
-  const baseFileRef = useRef<HTMLInputElement>(null);
-  const referenceFileRef = useRef<HTMLInputElement>(null);
+  const file1Ref = useRef<HTMLInputElement>(null);
+  const file2Ref = useRef<HTMLInputElement>(null);
 
-  // Logger mejorado
+  // Logger inline
   const logger = {
     info: (message: string, data?: unknown) => {
-      console.log(`[INFO] ${new Date().toISOString()} ${message}`, data || '');
+      console.log(`[INFO] ${message}`, data || '');
     },
     warn: (message: string, data?: unknown) => {
-      console.warn(`[WARN] ${new Date().toISOString()} ${message}`, data || '');
+      console.warn(`[WARN] ${message}`, data || '');
     },
     error: (message: string, error?: unknown) => {
-      console.error(`[ERROR] ${new Date().toISOString()} ${message}`, error || '');
+      console.error(`[ERROR] ${message}`, error || '');
     },
     debug: (message: string, data?: unknown) => {
       if (process.env.NODE_ENV === 'development') {
-        console.log(`[DEBUG] ${new Date().toISOString()} ${message}`, data || '');
+        console.log(`[DEBUG] ${message}`, data || '');
       }
     }
   };
 
-  // Función mejorada para leer archivos
-  const readFile = useCallback(async (file: File): Promise<Record<string, unknown>[]> => {
+  // Funciones de utilidad inline
+  const readFile = async (file: File): Promise<Record<string, unknown>[]> => {
     const fileExtension = file.name.toLowerCase().split('.').pop();
     
     if (fileExtension === 'csv') {
@@ -59,9 +54,9 @@ export default function ExcelMergerPage() {
     } else {
       throw new Error(`Tipo de archivo no soportado: ${fileExtension}`);
     }
-  }, []);
+  };
 
-  const readCSVFile = useCallback((file: File): Promise<Record<string, unknown>[]> => {
+  const readCSVFile = (file: File): Promise<Record<string, unknown>[]> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -100,7 +95,7 @@ export default function ExcelMergerPage() {
             return result;
           };
 
-          const headers = parseCSVLine(lines[0]).map(h => h.trim());
+          const headers = parseCSVLine(lines[0]);
           const data: Record<string, unknown>[] = [];
           
           for (let i = 1; i < lines.length; i++) {
@@ -108,7 +103,7 @@ export default function ExcelMergerPage() {
             if (values.length >= headers.length) {
               const row: Record<string, unknown> = {};
               headers.forEach((header, index) => {
-                row[header] = values[index]?.trim() || '';
+                row[header] = values[index] || '';
               });
               data.push(row);
             }
@@ -121,9 +116,9 @@ export default function ExcelMergerPage() {
       };
       reader.readAsText(file, 'utf-8');
     });
-  }, []);
+  };
 
-  const readExcelFile = useCallback(async (file: File, ExcelJS: typeof import('exceljs')): Promise<{ [key: string]: Record<string, unknown>[] }> => {
+  const readExcelFile = async (file: File, ExcelJS: typeof import('exceljs')): Promise<{ [key: string]: Record<string, unknown>[] }> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = async (e) => {
@@ -140,7 +135,7 @@ export default function ExcelMergerPage() {
             
             const headerRow = worksheet.getRow(1);
             headerRow.eachCell((cell, colNumber) => {
-              headers[colNumber - 1] = (cell.text || `Column${colNumber}`).trim();
+              headers[colNumber - 1] = cell.text || `Column${colNumber}`;
             });
             
             worksheet.eachRow((row, rowNumber) => {
@@ -149,8 +144,7 @@ export default function ExcelMergerPage() {
                 row.eachCell((cell, colNumber) => {
                   const header = headers[colNumber - 1];
                   if (header) {
-                    const cellValue = cell.text || cell.value;
-                    rowData[header] = typeof cellValue === 'string' ? cellValue.trim() : cellValue;
+                    rowData[header] = cell.text || cell.value;
                   }
                 });
                 if (Object.keys(rowData).length > 0) {
@@ -169,12 +163,12 @@ export default function ExcelMergerPage() {
       };
       reader.readAsArrayBuffer(file);
     });
-  }, []);
+  };
 
-  const downloadExcel = useCallback(async (
+  const downloadExcel = async (
     data: Record<string, unknown>[], 
     filename: string, 
-    sheetName: string = 'Datos_Combinados'
+    sheetName: string = 'Sheet1'
   ): Promise<void> => {
     try {
       const ExcelJS = await import('exceljs');
@@ -182,42 +176,24 @@ export default function ExcelMergerPage() {
       const worksheet = workbook.addWorksheet(sheetName);
       
       if (data.length > 0) {
-        // Orden específico de columnas como especificaste
-        const desiredOrder = [
-          'Source', 'Asset Team', 'Asset Name', 'Asset Type', 'URI', 
-          'Detector', 'Severity', 'Description', 'Version', 'Actual', 
-          'Remediacion', 'Fuente', 'Content Class', 'Exposure window', 
-          'Ignored', 'Line start', 'Line end'
-        ];
-        
-        // Obtener todas las columnas del primer registro
-        const allColumns = Object.keys(data[0]);
-        
-        // Crear el orden final: columnas deseadas primero, luego el resto
-        const finalOrder = [
-          ...desiredOrder.filter(col => allColumns.includes(col)),
-          ...allColumns.filter(col => !desiredOrder.includes(col))
-        ];
-        
-        worksheet.addRow(finalOrder);
+        const headers = Object.keys(data[0]);
+        worksheet.addRow(headers);
         
         data.forEach((row) => {
-          const values = finalOrder.map(header => row[header] || '');
+          const values = headers.map(header => row[header]);
           worksheet.addRow(values);
         });
         
-        // Formatear encabezados
         const headerRow = worksheet.getRow(1);
         headerRow.font = { bold: true };
         headerRow.fill = {
           type: 'pattern',
           pattern: 'solid',
-          fgColor: { argb: 'FF4F81BD' }
+          fgColor: { argb: 'FFE0E0E0' }
         };
-        
-        // Ajustar ancho de columnas
+
         worksheet.columns.forEach((column, index) => {
-          const header = finalOrder[index];
+          const header = headers[index];
           let maxLength = header ? header.length : 10;
           
           const sampleSize = Math.min(100, data.length);
@@ -228,9 +204,6 @@ export default function ExcelMergerPage() {
           
           column.width = Math.min(Math.max(maxLength + 2, 10), 50);
         });
-
-        // Congelar primera fila
-        worksheet.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
       }
       
       const buffer = await workbook.xlsx.writeBuffer();
@@ -247,395 +220,398 @@ export default function ExcelMergerPage() {
     } catch (error) {
       throw error;
     }
-  }, []);
+  };
 
-  // Función para encontrar la columna Detector (prioridad absoluta)
-  const findJoinColumn = useCallback((data1: Record<string, unknown>[], data2: Record<string, unknown>[]): string | null => {
-    if (data1.length === 0 || data2.length === 0) return null;
+  // Función para encontrar columnas comunes priorizando Detector
+  const findCommonColumns = (data1: Record<string, unknown>[], data2: Record<string, unknown>[]): string[] => {
+    if (data1.length === 0 || data2.length === 0) return [];
     
     const columns1 = Object.keys(data1[0]);
     const columns2 = Object.keys(data2[0]);
     
-    // Buscar específicamente "Detector" (case-sensitive primero)
-    if (columns1.includes('Detector') && columns2.includes('Detector')) {
-      return 'Detector';
-    }
+    const commonColumns = columns1.filter(col => columns2.includes(col));
     
-    // Buscar "detector" en cualquier case
-    const detectorCol1 = columns1.find(col => col.toLowerCase() === 'detector');
-    const detectorCol2 = columns2.find(col => col.toLowerCase() === 'detector');
+    // Priorizar columnas de identificación únicas, especialmente Detector
+    const priorityColumns = [
+      'Detector', 'detector', 
+      'Fingerprint', 'fingerprint', 
+      'Asset', 'asset', 
+      'Source', 'source',
+      'URI', 'uri'
+    ];
     
-    if (detectorCol1 && detectorCol2 && detectorCol1 === detectorCol2) {
-      return detectorCol1;
-    }
+    const sorted = commonColumns.sort((a, b) => {
+      const aIndex = priorityColumns.findIndex(p => a.toLowerCase() === p.toLowerCase());
+      const bIndex = priorityColumns.findIndex(p => b.toLowerCase() === p.toLowerCase());
+      
+      if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+      if (aIndex !== -1) return -1;
+      if (bIndex !== -1) return 1;
+      return a.localeCompare(b);
+    });
     
-    return null;
-  }, []);
+    logger.debug('Columnas comunes encontradas (priorizando Detector):', sorted);
+    return sorted;
+  };
 
-  const handleCombineFiles = useCallback(async () => {
-    if (!baseFileRef.current?.files?.[0] || !referenceFileRef.current?.files?.[0]) {
-      setMessage('❌ Por favor selecciona ambos archivos CSV o Excel');
+  const handleJoinFiles = async () => {
+    if (!file1Ref.current?.files?.[0] || !file2Ref.current?.files?.[0]) {
+      setMessage('Por favor selecciona ambos archivos CSV o Excel');
       return;
     }
 
     setLoading(true);
-    setMessage('Procesando archivos...');
+    setMessage('');
     setStats(null);
 
-    const startTime = Date.now();
-
     try {
-      const baseFile = baseFileRef.current.files[0]; // Archivo base (principal)
-      const refFile = referenceFileRef.current.files[0]; // Archivo de referencia
+      const file1 = file1Ref.current.files[0]; // Archivo principal (a enriquecer)
+      const file2 = file2Ref.current.files[0]; // Archivo con datos adicionales
 
-      logger.info(`Iniciando combinación: ${baseFile.name} (base) + ${refFile.name} (referencia)`);
+      logger.info(`Iniciando JOIN: ${file1.name} (principal) + ${file2.name} (datos adicionales)`);
 
-      const [baseData, refData] = await Promise.all([
-        readFile(baseFile),
-        readFile(refFile)
+      const [data1, data2] = await Promise.all([
+        readFile(file1),
+        readFile(file2)
       ]);
 
-      if (baseData.length === 0 || refData.length === 0) {
+      if (data1.length === 0 || data2.length === 0) {
         setMessage('❌ Uno o ambos archivos están vacíos');
         return;
       }
 
-      logger.info(`Archivos cargados: ${baseData.length} filas (base), ${refData.length} filas (referencia)`);
+      logger.info(`Archivos cargados: ${data1.length} filas (archivo 1), ${data2.length} filas (archivo 2)`);
 
-      // Buscar la columna Detector
-      const joinColumn = findJoinColumn(baseData, refData);
+      const columns1 = Object.keys(data1[0]);
+      const columns2 = Object.keys(data2[0]);
       
-      if (!joinColumn) {
-        const baseCols = Object.keys(baseData[0]);
-        const refCols = Object.keys(refData[0]);
-        setMessage(`❌ No se encontró la columna 'Detector' en ambos archivos.
-        
-Columnas en archivo base: ${baseCols.join(', ')}
-Columnas en archivo referencia: ${refCols.join(', ')}
-
-Asegúrate de que ambos archivos tengan una columna llamada 'Detector'.`);
+      const commonColumns = findCommonColumns(data1, data2);
+      
+      if (commonColumns.length === 0) {
+        setMessage('❌ No se encontraron columnas en común entre los archivos');
+        logger.warn('Columnas archivo 1:', columns1);
+        logger.warn('Columnas archivo 2:', columns2);
         return;
       }
 
-      logger.info(`Usando columna '${joinColumn}' para la combinación`);
+      // Buscar específicamente la columna Detector primero
+      let joinColumn = commonColumns.find(col => 
+        col.toLowerCase() === 'detector' || col === 'Detector'
+      );
       
-      // Crear índice del archivo de referencia
-      const refIndex = new Map<string, Record<string, unknown>>();
-      const duplicatesInRef = new Set<string>();
-      const seenKeys = new Set<string>();
+      // Si no hay Detector, usar la primera columna común (ya está priorizada)
+      if (!joinColumn) {
+        joinColumn = commonColumns[0];
+      }
       
-      refData.forEach((row, index) => {
+      logger.info(`Usando columna para JOIN: ${joinColumn}`);
+      
+      // Crear índice del segundo archivo para búsqueda rápida por Detector
+      const data2Index = new Map<string, Record<string, unknown>>();
+      const duplicatesInFile2 = new Map<string, number>();
+      
+      data2.forEach((row, index) => {
         const key = String(row[joinColumn] || '').trim();
         if (key && key !== 'undefined' && key !== 'null' && key !== '') {
-          if (seenKeys.has(key)) {
-            duplicatesInRef.add(key);
-            logger.warn(`Detector duplicado en archivo referencia: ${key}`);
+          if (data2Index.has(key)) {
+            // Contar duplicados en archivo 2
+            duplicatesInFile2.set(key, (duplicatesInFile2.get(key) || 1) + 1);
+            logger.warn(`Detector duplicado en archivo 2: ${key}`);
           } else {
-            seenKeys.add(key);
-            refIndex.set(key, { 
+            data2Index.set(key, { 
               ...row, 
-              _ref_row: index + 1,
-              _ref_file: refFile.name 
+              _source_row_file2: index + 1,
+              _source_file2: file2.name 
             });
           }
         }
       });
 
-      logger.info(`Índice creado: ${refIndex.size} detectores únicos en archivo referencia`);
-      
-      // Realizar la combinación (LEFT JOIN del archivo base con referencia)
+      logger.info(`Índice creado: ${data2Index.size} detectores únicos en archivo 2`);
+      if (duplicatesInFile2.size > 0) {
+        logger.warn(`Detectores duplicados en archivo 2: ${Array.from(duplicatesInFile2.keys()).join(', ')}`);
+      }
+
+      // Realizar LEFT JOIN basado en Detector
       let matchedCount = 0;
-      const combinedData = baseData.map((baseRow, index) => {
-        const detectorKey = String(baseRow[joinColumn] || '').trim();
-        const refRow = refIndex.get(detectorKey);
+      const joinedData = data1.map((row1, index) => {
+        const detectorKey = String(row1[joinColumn] || '').trim();
+        const row2 = data2Index.get(detectorKey);
         
-        if (refRow) {
-          // MATCH: Combinar información adicional del archivo de referencia
-          const combined = { ...baseRow }; // Comenzar con datos base
+        if (row2) {
+          // MATCH: Combinar datos preservando columnas específicas del archivo 2
+          const combined = { ...row1 }; // Empezar con archivo 1 como base
           
-          // Agregar solo las columnas específicas del archivo de referencia
-          if (refRow['Version']) combined['Version'] = refRow['Version'];
-          if (refRow['Actual']) combined['Actual'] = refRow['Actual'];
-          if (refRow['Remediacion']) combined['Remediacion'] = refRow['Remediacion'];
-          if (refRow['Fuente']) combined['Fuente'] = refRow['Fuente'];
+          // Mapeo de columnas específicas a preservar del archivo 2
+          const columnsToAdd = {
+            'Version Actual': row2['Version Actual'] || row2['version actual'] || row2['version_actual'] || '',
+            'Remediación': row2['Remediación'] || row2['remediacion'] || row2['Remediation'] || row2['remediation'] || '',
+            'Fuente': row2['Fuente'] || row2['fuente'] || row2['Source'] || row2['source'] || ''
+          };
           
-          // Metadatos
-          combined._match_status = 'matched';
-          combined._base_row = index + 1;
-          combined._ref_row = refRow._ref_row;
+          // Agregar las columnas específicas del archivo 2
+          Object.entries(columnsToAdd).forEach(([key, value]) => {
+            if (value && String(value).trim() !== '') {
+              combined[key] = value;
+            }
+          });
+          
+          // También agregar cualquier otra columna del archivo 2 que no esté en archivo 1
+          Object.keys(row2).forEach(key => {
+            if (!combined.hasOwnProperty(key) && 
+                !key.startsWith('_source_') && 
+                !key.startsWith('_file2_')) {
+              combined[key] = row2[key];
+            }
+          });
+          
+          // Agregar metadatos del join
+          combined._join_status = 'matched';
+          combined._join_key = detectorKey;
+          combined._file1_row = index + 1;
+          combined._file1_name = file1.name;
+          combined._file2_name = file2.name;
+          combined._matched_detector = detectorKey;
+          combined._columns_added_from_file2 = Object.keys(columnsToAdd).filter(key => 
+            columnsToAdd[key] && String(columnsToAdd[key]).trim() !== ''
+          ).join(', ');
           
           matchedCount++;
           return combined;
         } else {
-          // NO MATCH: Solo datos del archivo base
-          const result = { ...baseRow };
-          result._match_status = 'no_match';
-          result._base_row = index + 1;
+          // NO MATCH: Solo datos del archivo 1
+          const result = { ...row1 };
+          result._join_status = 'no_match';
+          result._join_key = detectorKey;
+          result._file1_row = index + 1;
+          result._file1_name = file1.name;
           result._unmatched_detector = detectorKey;
           
           return result;
         }
       });
 
-      const unmatchedCount = baseData.length - matchedCount;
+      const unmatchedCount = data1.length - matchedCount;
 
-      // Detectores en referencia que no están en base
-      const detectorsInBase = new Set(baseData.map(row => String(row[joinColumn] || '').trim()));
-      const unmatchedInRef = Array.from(refIndex.keys()).filter(detector => !detectorsInBase.has(detector));
-
-      if (unmatchedInRef.length > 0) {
-        logger.info(`Detectores en referencia que NO están en base: ${unmatchedInRef.slice(0, 10).join(', ')}${unmatchedInRef.length > 10 ? '...' : ''}`);
+      // Agregar información sobre detectores que están en archivo 2 pero no en archivo 1
+      const detectorsInFile1 = new Set(data1.map(row => String(row[joinColumn] || '').trim()));
+      const unmatchedInFile2 = Array.from(data2Index.keys()).filter(detector => !detectorsInFile1.has(detector));
+      
+      if (unmatchedInFile2.length > 0) {
+        logger.info(`Detectores en archivo 2 que NO están en archivo 1: ${unmatchedInFile2.join(', ')}`);
       }
 
-      // Generar archivo
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const filename = `excel_combinado_${timestamp}.xlsx`;
+      const filename = `join_por_detector_${timestamp}.xlsx`;
       
-      await downloadExcel(combinedData, filename, 'Datos_Combinados');
+      await downloadExcel(joinedData, filename, 'Datos_Unidos_Por_Detector');
       
-      const processingTime = Date.now() - startTime;
-      
-      // Calcular estadísticas
-      const baseCols = Object.keys(baseData[0]);
-      const refCols = Object.keys(refData[0]);
-      const commonColumns = baseCols.filter(col => refCols.includes(col));
-      const file1OnlyColumns = baseCols.filter(col => !refCols.includes(col));
-      const file2OnlyColumns = refCols.filter(col => !baseCols.includes(col));
+      // Calcular columnas exclusivas
+      const file1OnlyColumns = columns1.filter(col => !columns2.includes(col));
+      const file2OnlyColumns = columns2.filter(col => !columns1.includes(col));
 
       setStats({
-        file1Name: baseFile.name,
-        file2Name: refFile.name,
-        file1Rows: baseData.length,
-        file2Rows: refData.length,
+        file1Name: file1.name,
+        file2Name: file2.name,
+        file1Rows: data1.length,
+        file2Rows: data2.length,
         joinColumn,
         matchedRows: matchedCount,
         unmatchedRows: unmatchedCount,
-        totalOutputRows: combinedData.length,
+        totalOutputRows: joinedData.length,
         commonColumns,
         file1OnlyColumns,
-        file2OnlyColumns,
-        duplicatesInFile2: duplicatesInRef.size,
-        unmatchedInFile2: unmatchedInRef.length,
-        processingTime
+        file2OnlyColumns
       });
 
-      let resultMessage = `✅ Combinación completada exitosamente!\n`;
-      resultMessage += `📊 ${matchedCount} coincidencias de ${baseData.length} registros del archivo base\n`;
-      resultMessage += `⏱️ Procesado en ${Math.round(processingTime / 1000 * 100) / 100} segundos\n`;
+      let resultMessage = `✅ JOIN completado usando la columna "${joinColumn}"!\n`;
+      resultMessage += `📊 ${matchedCount} coincidencias de ${data1.length} filas del archivo principal\n`;
       
       if (unmatchedCount > 0) {
-        resultMessage += `⚠️ ${unmatchedCount} registros sin coincidencia (se mantuvieron del archivo base)\n`;
+        resultMessage += `⚠️ ${unmatchedCount} filas sin coincidencia (se mantuvieron del archivo principal)\n`;
       }
       
-      if (duplicatesInRef.size > 0) {
-        resultMessage += `🔄 ${duplicatesInRef.size} detectores duplicados en archivo referencia (se usó la primera ocurrencia)\n`;
+      if (duplicatesInFile2.size > 0) {
+        resultMessage += `🔄 ${duplicatesInFile2.size} detectores duplicados en archivo 2 (se usó la primera ocurrencia)\n`;
       }
       
-      if (unmatchedInRef.length > 0) {
-        resultMessage += `📝 ${unmatchedInRef.length} detectores en referencia que no están en archivo base\n`;
+      if (unmatchedInFile2.length > 0) {
+        resultMessage += `📝 ${unmatchedInFile2.length} detectores en archivo 2 que no están en archivo 1`;
       }
-
-      resultMessage += `\n📁 Archivo descargado: ${filename}`;
 
       setMessage(resultMessage);
-      logger.info(`Combinación completada: ${matchedCount} coincidencias de ${baseData.length} registros`);
+      logger.info(`JOIN completado: ${matchedCount} coincidencias de ${data1.length} filas`);
       
     } catch (error) {
-      logger.error('Error en combinación de archivos', error);
+      logger.error('Error en JOIN de archivos', error);
       setMessage(`❌ Error: ${error}`);
     } finally {
       setLoading(false);
     }
-  }, [readFile, findJoinColumn, downloadExcel]);
+  };
 
-  const resetForm = useCallback(() => {
-    if (baseFileRef.current) baseFileRef.current.value = '';
-    if (referenceFileRef.current) referenceFileRef.current.value = '';
+  const resetForm = () => {
+    if (file1Ref.current) file1Ref.current.value = '';
+    if (file2Ref.current) file2Ref.current.value = '';
     setMessage('');
     setStats(null);
-  }, []);
+  };
 
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="bg-white rounded-xl shadow-lg p-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">
-            🔗 Combinar Archivos Excel por Detector
-          </h1>
-          <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
-            <p className="text-blue-800 mb-2">
-              <strong>Funcionalidad:</strong> Combina dos archivos Excel usando la columna <code className="bg-blue-100 px-2 py-1 rounded">Detector</code> como clave de unión.
-            </p>
-            <p className="text-blue-700 text-sm">
-              El archivo base mantiene todas sus filas y se enriquece con información adicional (Version, Actual, Remediacion, Fuente) 
-              del archivo de referencia donde coincida el Detector.
+    <div className="max-w-4xl mx-auto">
+      <div className="bg-white rounded-lg shadow-lg p-8">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Unir Archivos por Detector (Left Join)</h1>
+          <p className="text-gray-600">
+            Une dos archivos basándose en la columna <strong>Detector</strong>. El archivo principal mantiene todas sus filas 
+            y se enriquece con columnas específicas del segundo archivo: <strong>Version Actual</strong>, <strong>Remediación</strong> y <strong>Fuente</strong>.
+          </p>
+          <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <strong>Ejemplo:</strong> Si archivo1 tiene "detector1" en 5 filas y archivo2 tiene "detector1" con información de remediación, 
+              esas 5 filas del archivo1 tendrán agregadas las columnas: Version Actual, Remediación y Fuente del archivo2.
             </p>
           </div>
         </div>
 
         <div className="space-y-6">
-          <div className="grid lg:grid-cols-2 gap-6">
-            {/* Archivo Base */}
-            <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-xl border border-blue-200">
-              <label className="block text-lg font-semibold text-blue-900 mb-3">
-                📊 Archivo Base (Principal)
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                📄 Archivo principal (a enriquecer):
               </label>
               <input
-                ref={baseFileRef}
+                ref={file1Ref}
                 type="file"
                 accept=".csv,.xlsx,.xls"
-                className="w-full p-4 border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 onChange={() => setMessage('')}
               />
-              <div className="mt-3 text-sm text-blue-700">
-                <p className="font-medium">Características:</p>
-                <ul className="list-disc list-inside space-y-1 mt-1">
-                  <li>Debe contener la columna <strong>Detector</strong></li>
-                  <li>Todas las filas se mantienen en el resultado</li>
-                  <li>Contiene las columnas principales del sistema</li>
-                </ul>
-              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Este archivo mantiene todas sus filas. Debe tener columna <strong>Detector</strong>.
+              </p>
             </div>
 
-            {/* Archivo de Referencia */}
-            <div className="bg-gradient-to-br from-green-50 to-green-100 p-6 rounded-xl border border-green-200">
-              <label className="block text-lg font-semibold text-green-900 mb-3">
-                📋 Archivo de Referencia
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                📋 Archivo con datos adicionales:
               </label>
               <input
-                ref={referenceFileRef}
+                ref={file2Ref}
                 type="file"
                 accept=".csv,.xlsx,.xls"
-                className="w-full p-4 border-2 border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 bg-white"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
                 onChange={() => setMessage('')}
               />
-              <div className="mt-3 text-sm text-green-700">
-                <p className="font-medium">Debe contener columnas:</p>
-                <ul className="list-disc list-inside space-y-1 mt-1">
-                  <li><strong>Detector</strong> (clave de unión)</li>
-                  <li><strong>Version, Actual, Remediacion, Fuente</strong></li>
-                  <li>Se agrega al archivo base donde coincida</li>
-                </ul>
-              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Los datos de este archivo se agregarán al principal donde coincida el <strong>Detector</strong>.
+              </p>
             </div>
           </div>
 
-          {/* Botones de Acción */}
           <div className="flex space-x-4">
             <button
-              onClick={handleCombineFiles}
+              onClick={handleJoinFiles}
               disabled={loading}
               className={`
-                flex-1 py-4 px-8 rounded-xl font-semibold text-lg transition-all duration-300 text-white
+                flex-1 py-3 px-6 rounded-lg font-medium transition-colors text-white
                 ${loading 
                   ? 'bg-gray-400 cursor-not-allowed' 
-                  : 'bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 shadow-lg hover:shadow-xl transform hover:-translate-y-1'}
+                  : 'bg-purple-500 hover:bg-purple-600'}
               `}
             >
               {loading ? (
                 <span className="flex items-center justify-center">
-                  <svg className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Combinando archivos...
+                  Uniendo archivos...
                 </span>
               ) : (
-                '🚀 Combinar y Descargar Excel'
+                'Unir Archivos y Descargar Excel'
               )}
             </button>
 
             <button
               onClick={resetForm}
               disabled={loading}
-              className="px-8 py-4 border-2 border-gray-300 rounded-xl text-gray-700 hover:bg-gray-50 transition-colors font-semibold text-lg"
+              className="px-6 py-3 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors font-medium"
             >
-              🔄 Limpiar
+              Limpiar
             </button>
           </div>
         </div>
 
-        {/* Mensaje de Estado */}
+        {/* Mensaje de estado */}
         {message && (
-          <div className={`mt-8 p-6 rounded-xl border-l-4 ${
+          <div className={`mt-6 p-4 rounded-lg ${
             message.includes('✅') 
-              ? 'bg-green-50 border-green-400 text-green-800' 
-              : 'bg-red-50 border-red-400 text-red-800'
+              ? 'bg-green-100 border border-green-200 text-green-700' 
+              : 'bg-red-100 border border-red-200 text-red-700'
           }`}>
-            <pre className="whitespace-pre-wrap font-medium">{message}</pre>
+            <pre className="whitespace-pre-wrap">{message}</pre>
           </div>
         )}
 
-        {/* Estadísticas Detalladas */}
+        {/* Estadísticas detalladas */}
         {stats && (
-          <div className="mt-8 bg-gray-50 rounded-xl p-6 border border-gray-200">
-            <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center">
-              📊 Resultados de la Combinación
-              <span className="ml-3 text-sm font-normal bg-green-100 text-green-800 px-3 py-1 rounded-full">
-                {Math.round((stats.matchedRows / stats.file1Rows) * 100)}% éxito
-              </span>
-            </h3>
+          <div className="mt-6 bg-gray-50 rounded-lg p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">📊 Resultados del Join</h3>
             
-            {/* Resumen de Archivos */}
-            <div className="grid md:grid-cols-2 gap-6 mb-8">
-              <div className="bg-white p-6 rounded-lg border-l-4 border-l-blue-500 shadow-sm">
-                <h4 className="font-bold text-lg text-gray-900">{stats.file1Name}</h4>
-                <div className="text-blue-600 font-medium">Archivo Base: {stats.file1Rows.toLocaleString()} filas</div>
-                <div className="text-sm text-gray-600 mt-1">Se mantuvieron todas las filas</div>
+            {/* Resumen de archivos */}
+            <div className="grid md:grid-cols-2 gap-4 mb-6">
+              <div className="bg-white p-4 rounded-lg border-l-4 border-l-blue-500">
+                <h4 className="font-medium text-gray-900">{stats.file1Name}</h4>
+                <div className="text-sm text-gray-600">Archivo principal: {stats.file1Rows} filas</div>
               </div>
-              <div className="bg-white p-6 rounded-lg border-l-4 border-l-green-500 shadow-sm">
-                <h4 className="font-bold text-lg text-gray-900">{stats.file2Name}</h4>
-                <div className="text-green-600 font-medium">Archivo Referencia: {stats.file2Rows.toLocaleString()} filas</div>
-                <div className="text-sm text-gray-600 mt-1">Información adicional agregada</div>
+              <div className="bg-white p-4 rounded-lg border-l-4 border-l-green-500">
+                <h4 className="font-medium text-gray-900">{stats.file2Name}</h4>
+                <div className="text-sm text-gray-600">Datos adicionales: {stats.file2Rows} filas</div>
               </div>
             </div>
 
-            {/* Métricas del Proceso */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
-              <div className="bg-white p-4 rounded-lg shadow-sm text-center">
-                <div className="text-3xl font-bold text-green-600">{stats.matchedRows.toLocaleString()}</div>
-                <div className="text-sm text-gray-600 font-medium">Coincidencias</div>
+            {/* Métricas del JOIN */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              <div className="bg-white p-4 rounded-lg">
+                <div className="text-2xl font-bold text-green-600">{stats.matchedRows}</div>
+                <div className="text-sm text-gray-600">Coincidencias</div>
               </div>
-              <div className="bg-white p-4 rounded-lg shadow-sm text-center">
-                <div className="text-3xl font-bold text-yellow-600">{stats.unmatchedRows.toLocaleString()}</div>
-                <div className="text-sm text-gray-600 font-medium">Sin coincidencia</div>
+              <div className="bg-white p-4 rounded-lg">
+                <div className="text-2xl font-bold text-yellow-600">{stats.unmatchedRows}</div>
+                <div className="text-sm text-gray-600">Sin coincidencia</div>
               </div>
-              <div className="bg-white p-4 rounded-lg shadow-sm text-center">
-                <div className="text-3xl font-bold text-blue-600">{stats.totalOutputRows.toLocaleString()}</div>
-                <div className="text-sm text-gray-600 font-medium">Filas finales</div>
+              <div className="bg-white p-4 rounded-lg">
+                <div className="text-2xl font-bold text-blue-600">{stats.totalOutputRows}</div>
+                <div className="text-sm text-gray-600">Filas salida</div>
               </div>
-              <div className="bg-white p-4 rounded-lg shadow-sm text-center">
-                <div className="text-3xl font-bold text-purple-600">{stats.duplicatesInFile2}</div>
-                <div className="text-sm text-gray-600 font-medium">Duplicados Ref.</div>
-              </div>
-              <div className="bg-white p-4 rounded-lg shadow-sm text-center">
-                <div className="text-3xl font-bold text-indigo-600">{(stats.processingTime / 1000).toFixed(1)}s</div>
-                <div className="text-sm text-gray-600 font-medium">Tiempo</div>
+              <div className="bg-white p-4 rounded-lg">
+                <div className="text-2xl font-bold text-purple-600">
+                  {Math.round((stats.matchedRows / stats.file1Rows) * 100)}%
+                </div>
+                <div className="text-sm text-gray-600">Éxito JOIN</div>
               </div>
             </div>
 
-            {/* Información de la Columna JOIN */}
+            {/* Información de la columna JOIN */}
             <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-lg">
-              <div className="text-lg font-semibold text-purple-900 mb-2">
-                🔗 Columna de Unión: <code className="bg-purple-100 px-3 py-1 rounded font-mono">{stats.joinColumn}</code>
+              <div className="text-sm font-medium text-purple-900">
+                Columna utilizada para JOIN: <code className="bg-purple-100 px-2 py-1 rounded">{stats.joinColumn}</code>
               </div>
-              <div className="text-sm text-purple-700">
-                Se detectó automáticamente la columna 'Detector' para realizar la combinación
+              <div className="text-xs text-purple-700 mt-1">
+                Se priorizaron automáticamente las columnas de identificación única
               </div>
             </div>
 
-            {/* Análisis de Columnas */}
-            <div className="grid lg:grid-cols-3 gap-4 mb-6">
-              <div className="bg-white p-4 rounded-lg shadow-sm">
-                <h4 className="font-semibold text-gray-900 mb-3 flex items-center">
-                  🔗 Columnas Comunes 
-                  <span className="ml-2 bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">{stats.commonColumns.length}</span>
-                </h4>
-                <div className="text-sm text-gray-600 max-h-32 overflow-y-auto">
+            {/* Análisis de columnas */}
+            <div className="grid md:grid-cols-3 gap-4">
+              <div className="bg-white p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">🔗 Columnas Comunes</h4>
+                <div className="text-sm text-gray-600">
                   {stats.commonColumns.length > 0 ? (
                     <div className="space-y-1">
                       {stats.commonColumns.map((col, idx) => (
-                        <div key={idx} className={`${col === stats.joinColumn ? 'font-bold text-purple-700 bg-purple-50 px-2 py-1 rounded' : ''}`}>
+                        <div key={idx} className={`${col === stats.joinColumn ? 'font-semibold text-purple-700' : ''}`}>
                           {col === stats.joinColumn && '→ '}{col}
                         </div>
                       ))}
@@ -646,14 +622,11 @@ Asegúrate de que ambos archivos tengan una columna llamada 'Detector'.`);
                 </div>
               </div>
 
-              <div className="bg-white p-4 rounded-lg shadow-sm">
-                <h4 className="font-semibold text-gray-900 mb-3 flex items-center">
-                  📊 Solo en Base 
-                  <span className="ml-2 bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded">{stats.file1OnlyColumns.length}</span>
-                </h4>
-                <div className="text-sm text-gray-600 max-h-32 overflow-y-auto">
+              <div className="bg-white p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">📄 Solo en Archivo 1</h4>
+                <div className="text-sm text-gray-600">
                   {stats.file1OnlyColumns.length > 0 ? (
-                    <div className="space-y-1">
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
                       {stats.file1OnlyColumns.map((col, idx) => (
                         <div key={idx}>{col}</div>
                       ))}
@@ -664,14 +637,11 @@ Asegúrate de que ambos archivos tengan una columna llamada 'Detector'.`);
                 </div>
               </div>
 
-              <div className="bg-white p-4 rounded-lg shadow-sm">
-                <h4 className="font-semibold text-gray-900 mb-3 flex items-center">
-                  📋 Solo en Referencia 
-                  <span className="ml-2 bg-green-100 text-green-700 text-xs px-2 py-1 rounded">{stats.file2OnlyColumns.length}</span>
-                </h4>
-                <div className="text-sm text-gray-600 max-h-32 overflow-y-auto">
+              <div className="bg-white p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">📋 Solo en Archivo 2</h4>
+                <div className="text-sm text-gray-600">
                   {stats.file2OnlyColumns.length > 0 ? (
-                    <div className="space-y-1">
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
                       {stats.file2OnlyColumns.map((col, idx) => (
                         <div key={idx}>{col}</div>
                       ))}
@@ -683,125 +653,63 @@ Asegúrate de que ambos archivos tengan una columna llamada 'Detector'.`);
               </div>
             </div>
 
-            {/* Advertencias y Observaciones */}
-            <div className="space-y-4">
-              {stats.unmatchedRows > 0 && (
-                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <h4 className="font-semibold text-yellow-900 mb-2 flex items-center">
-                    ⚠️ Registros sin coincidencia
-                  </h4>
-                  <p className="text-sm text-yellow-800">
-                    <strong>{stats.unmatchedRows.toLocaleString()}</strong> registros del archivo base no encontraron 
-                    coincidencias en el archivo de referencia. Estos registros se mantuvieron con sus datos originales 
-                    (sin las columnas Version, Actual, Remediacion, Fuente).
-                  </p>
-                </div>
-              )}
-
-              {stats.duplicatesInFile2 > 0 && (
-                <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                  <h4 className="font-semibold text-orange-900 mb-2 flex items-center">
-                    🔄 Detectores duplicados en referencia
-                  </h4>
-                  <p className="text-sm text-orange-800">
-                    Se encontraron <strong>{stats.duplicatesInFile2}</strong> detectores duplicados en el archivo de referencia. 
-                    Se utilizó la primera ocurrencia de cada detector para la combinación.
-                  </p>
-                </div>
-              )}
-
-              {stats.unmatchedInFile2 > 0 && (
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h4 className="font-semibold text-blue-900 mb-2 flex items-center">
-                    📝 Detectores no utilizados
-                  </h4>
-                  <p className="text-sm text-blue-800">
-                    <strong>{stats.unmatchedInFile2.toLocaleString()}</strong> detectores del archivo de referencia 
-                    no se encontraron en el archivo base y por tanto no se utilizaron en la combinación.
-                  </p>
-                </div>
-              )}
-
-              {stats.matchedRows === stats.file1Rows && (
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <h4 className="font-semibold text-green-900 mb-2 flex items-center">
-                    ✅ Combinación perfecta
-                  </h4>
-                  <p className="text-sm text-green-800">
-                    ¡Excelente! Todos los registros del archivo base encontraron información adicional 
-                    en el archivo de referencia. La combinación fue 100% exitosa.
-                  </p>
-                </div>
-              )}
-            </div>
+            {/* Advertencias si es necesario */}
+            {stats.unmatchedRows > 0 && (
+              <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <h4 className="font-medium text-yellow-900 mb-2">⚠️ Filas sin coincidencia</h4>
+                <p className="text-sm text-yellow-800">
+                  {stats.unmatchedRows} filas del archivo principal no encontraron coincidencias en el archivo de datos adicionales. 
+                  Estas filas se mantuvieron en el resultado con sus datos originales.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Guía de Uso */}
-        <div className="mt-8 bg-gradient-to-br from-purple-50 to-blue-50 border border-purple-200 rounded-xl p-6">
-          <h3 className="text-xl font-bold text-purple-900 mb-4 flex items-center">
-            💡 Guía de Uso - Combinación por Detector
-          </h3>
-          
-          <div className="grid lg:grid-cols-2 gap-6">
-            <div>
-              <h4 className="font-semibold text-purple-800 mb-3">🔍 Proceso de Combinación:</h4>
-              <ol className="list-decimal list-inside space-y-2 text-sm text-purple-700">
-                <li>Se busca automáticamente la columna <code className="bg-purple-100 px-2 py-1 rounded">Detector</code> en ambos archivos</li>
-                <li>Por cada registro del archivo base, se busca el mismo detector en el archivo de referencia</li>
-                <li>Si hay coincidencia: se agregan las columnas <strong>Version, Actual, Remediacion, Fuente</strong></li>
-                <li>Si no hay coincidencia: el registro se mantiene sin información adicional</li>
-                <li>Se preservan TODOS los registros del archivo base (LEFT JOIN)</li>
+        {/* Información de ayuda */}
+        <div className="mt-8 bg-purple-50 border border-purple-200 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-purple-900 mb-3">💡 Información de Uso - JOIN por Detector</h3>
+          <div className="text-sm text-purple-800 space-y-2">
+            <p><strong>Prioridad de columnas para JOIN:</strong></p>
+            <ol className="list-decimal list-inside space-y-1 ml-4">
+              <li><code>Detector</code> - PRIORIDAD PRINCIPAL para vulnerabilidades</li>
+              <li><code>Fingerprint</code> - Identificador único alternativo</li>
+              <li><code>Asset</code> - Identificador de activo</li>
+              <li><code>Source</code> - Origen de la vulnerabilidad</li>
+              <li>Otras columnas comunes por orden alfabético</li>
+            </ol>
+            
+            <div className="mt-4 p-3 bg-purple-100 rounded">
+              <p><strong>🔄 Proceso de JOIN:</strong></p>
+              <ol className="list-decimal list-inside space-y-1 ml-2 text-xs">
+                <li>Se busca la columna <code>Detector</code> en ambos archivos</li>
+                <li>Por cada fila del archivo principal, se busca el mismo detector en archivo adicional</li>
+                <li>Si hay coincidencia: se combinan los datos (archivo principal tiene prioridad)</li>
+                <li>Si no hay coincidencia: se mantiene solo los datos del archivo principal</li>
+                <li>Se agregan metadatos del proceso de JOIN</li>
               </ol>
             </div>
             
-            <div>
-              <h4 className="font-semibold text-purple-800 mb-3">📋 Requisitos de los Archivos:</h4>
-              <div className="space-y-3 text-sm text-purple-700">
-                <div className="bg-white p-3 rounded-lg border border-purple-100">
-                  <strong>Archivo Base:</strong>
-                  <ul className="list-disc list-inside mt-1 space-y-1">
-                    <li>Debe contener columna <code>Detector</code></li>
-                    <li>Contiene las columnas principales del sistema</li>
-                    <li>Se mantienen todas las filas</li>
-                  </ul>
-                </div>
-                
-                <div className="bg-white p-3 rounded-lg border border-purple-100">
-                  <strong>Archivo de Referencia:</strong>
-                  <ul className="list-disc list-inside mt-1 space-y-1">
-                    <li>Debe contener columna <code>Detector</code></li>
-                    <li>Debe contener: <code>Version, Actual, Remediacion, Fuente</code></li>
-                    <li>Si hay duplicados, se usa la primera ocurrencia</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 p-4 bg-white border border-purple-200 rounded-lg">
-            <h4 className="font-semibold text-purple-800 mb-2">📤 Resultado Final:</h4>
-            <p className="text-sm text-purple-700 mb-3">
-              El archivo Excel resultante tendrá las columnas en este orden específico:
-            </p>
-            <div className="bg-purple-50 p-3 rounded text-xs font-mono text-purple-800">
-              Source → Asset Team → Asset Name → Asset Type → URI → Detector → Severity → 
-              Description → <strong>Version → Actual → Remediacion → Fuente</strong> → Content Class → 
-              Exposure window → Ignored → Line start → Line end
-            </div>
-            <p className="text-xs text-purple-600 mt-2">
-              Las columnas en <strong>negrita</strong> son las que se agregan del archivo de referencia cuando hay coincidencia de Detector.
-            </p>
-          </div>
-
-          <div className="mt-4 p-4 bg-yellow-50 border border-yellow-300 rounded-lg">
-            <h4 className="font-semibold text-yellow-800 mb-2">🎯 Casos de Uso Típicos:</h4>
-            <ul className="list-disc list-inside space-y-1 text-sm text-yellow-700">
-              <li><strong>Enriquecimiento de vulnerabilidades:</strong> Agregar información de remediación a reportes de seguridad</li>
-              <li><strong>Actualización de versiones:</strong> Combinar datos de versiones actuales con información histórica</li>
-              <li><strong>Consolidación de fuentes:</strong> Unir información de múltiples herramientas de análisis</li>
-              <li><strong>Reportes ejecutivos:</strong> Crear vistas completas combinando datos técnicos y de gestión</li>
+            <p className="mt-3"><strong>Metadatos agregados al resultado:</strong></p>
+            <ul className="list-disc list-inside space-y-1 ml-4 text-xs">
+              <li><code>_join_status</code>: &apos;matched&apos; o &apos;no_match&apos;</li>
+              <li><code>_file1_row</code>: Número de fila en archivo principal</li>
+              <li><code>_file1_name</code>: Nombre del archivo principal</li>
+              <li><code>_matched_detector</code>: Detector que tuvo coincidencia (solo si matched)</li>
+              <li><code>_unmatched_detector</code>: Detector sin coincidencia (solo si no_match)</li>
             </ul>
+            
+            <div className="mt-4 p-3 bg-yellow-100 border border-yellow-300 rounded">
+              <p className="text-yellow-800"><strong>⚠️ Consideraciones importantes:</strong></p>
+              <ul className="list-disc list-inside space-y-1 ml-2 text-xs text-yellow-700">
+                <li>Si hay detectores duplicados en archivo 2, se usa la primera ocurrencia</li>
+                <li>El archivo principal mantiene TODAS sus filas (LEFT JOIN)</li>
+                <li>En caso de columnas duplicadas, el archivo principal tiene prioridad</li>
+                <li>Se reportan detectores que están en archivo 2 pero no en archivo 1</li>
+              </ul>
+            </div>
+            
+            <p className="mt-3"><strong>Comportamiento:</strong> LEFT JOIN completo - todas las filas del archivo principal se preservan</p>
           </div>
         </div>
       </div>
